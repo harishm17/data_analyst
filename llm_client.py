@@ -61,26 +61,40 @@ class LLMClient:
         else:
             raise ValueError(f"Unsupported provider: {self.config.provider}")
     
-    def generate_structured(self, prompt: str, response_schema: BaseModel, **kwargs) -> BaseModel:
+    def generate_structured(self, prompt: str, response_schema: BaseModel, max_retries: int = 3, **kwargs) -> BaseModel:
         """
-        Generate structured response using Pydantic schema
+        Generate structured response using Pydantic schema with retry logic
         
         Args:
             prompt: The input prompt
             response_schema: Pydantic model defining the expected response structure
+            max_retries: Maximum number of retry attempts
             **kwargs: Additional parameters for the specific provider
             
         Returns:
             Parsed response matching the schema
         """
-        if self.config.provider == "openai":
-            return self._call_openai_structured(prompt, response_schema, **kwargs)
-        elif self.config.provider == "claude":
-            return self._call_claude_structured(prompt, response_schema, **kwargs)
-        elif self.config.provider == "gemini":
-            return self._call_gemini_structured(prompt, response_schema, **kwargs)
-        else:
-            raise ValueError(f"Unsupported provider: {self.config.provider}")
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                if self.config.provider == "openai":
+                    return self._call_openai_structured(prompt, response_schema, **kwargs)
+                elif self.config.provider == "claude":
+                    return self._call_claude_structured(prompt, response_schema, **kwargs)
+                elif self.config.provider == "gemini":
+                    return self._call_gemini_structured(prompt, response_schema, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported provider: {self.config.provider}")
+                    
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    print(f"Structured output attempt {attempt + 1} failed: {str(e)}")
+                    print(f"Retrying... (attempt {attempt + 2}/{max_retries})")
+                else:
+                    print(f"All {max_retries} attempts failed. Last error: {str(e)}")
+                    raise last_error
     
     def _call_openai(self, prompt: str, **kwargs) -> str:
         """Call OpenAI API for text generation"""
@@ -233,12 +247,13 @@ def get_llm_client() -> LLMClient:
         _llm_client = LLMClient()
     return _llm_client
 
+# Convenience functions for easy usage
 def generate_text(prompt: str, **kwargs) -> str:
     """Quick function to generate text using configured provider"""
     client = get_llm_client()
     return client.generate_text(prompt, **kwargs)
 
-def generate_structured(prompt: str, response_schema: BaseModel, **kwargs) -> BaseModel:
-    """Quick function to generate structured output using configured provider"""
+def generate_structured(prompt: str, response_schema: BaseModel, max_retries: int = 3, **kwargs) -> BaseModel:
+    """Quick function to generate structured output using configured provider with retry logic"""
     client = get_llm_client()
-    return client.generate_structured(prompt, response_schema, **kwargs) 
+    return client.generate_structured(prompt, response_schema, max_retries=max_retries, **kwargs) 
